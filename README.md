@@ -1,6 +1,6 @@
 # HyPerTune-tools
 
-**HyPerTune-tools** is a suite of scripts designed to automate the benchmarking and data analysis of the **Kahypar** program. These tools are built to handle hundreds of matrices, enabling you to convert matrix files, generate preset variations, run performance benchmarks, and analyze the results efficiently.
+**HyPerTune-tools** is a suite of scripts designed to automate the benchmarking and data analysis of the **Kahypar** and **PaToH** programs. These tools are built to handle hundreds of matrices, enabling you to convert matrix files, generate preset variations, run performance benchmarks, and analyze the results efficiently.
 
 ## ⚠️ Usage Notice
 
@@ -20,7 +20,7 @@ This repository includes scripts and tools for:
 
 1. **Matrix Conversion**: Converting `.mtx` files (Matrix Market format) to `.hgr` files (Hypergraph format).
 2. **Preset Generation**: Creating variations of preset configurations to be tested with matrices.
-3. **Benchmarking**: Running benchmarking tasks on matrices with preset variations using the **Kahypar** program.
+3. **Benchmarking**: Running benchmarking tasks on matrices with preset variations using the **Kahypar** and **PaToH** programs.
 4. **Data Analysis**: Collecting benchmarking results, processing them, and performing analysis.
 5. **Timeout Handling**: Managing timeouts for benchmarking tasks that may take too long.
 
@@ -30,13 +30,13 @@ The repository is organized as follows:
 
 ### Subfolders
 
-- **`logs/`**: Folder where log files from benchmarking tasks are stored. Contains detailed logs of all benchmarking runs.
+- **`*_logs/`**: Folder where log files from benchmarking tasks are stored. Contains detailed logs of all benchmarking runs.
 - **`matrices/`**: Folder containing `.mtx` files (Matrix Market format) to be used for benchmarking.
-- **`presets/`**: Folder for preset configuration files used during benchmarking.
+- **`presets/`**: Folder for preset configuration files used during benchmarking for the **KaHyPar** program.
 - **`data_analysis/`**: Folder where the processed results of the benchmarking tasks are stored, including any visualizations or data analysis outputs.
 - **`data_gathering/`**: Folder where scripts for gathering and preparing matrix data are stored.
 - **`benchmarking/`**: Folder containing the core benchmarking scripts, including scripts for initiating benchmarking tasks and handling results.
-- **`timed_out/`**: Folder where benchmarking tasks that exceeded their time limit are placed.
+- **`*_timed_out/`**: Folder where benchmarking tasks that exceeded their time limit are placed.
 
 ## Installation
 

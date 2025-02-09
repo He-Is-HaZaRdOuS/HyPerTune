@@ -1,8 +1,8 @@
 import os
 import re
 
-log_dir = '/home/hazardous/Desktop/HyPerTune-tools/logs'
-output_file = 'combined_logs.txt'
+log_dir = '/home/hazardous/Desktop/HyPerTune-tools/kahypar_logs'
+output_file = 'combined_kahypar_logs.txt'
 
 def get_filename(path):
     return os.path.basename(path)  # Extracts only the filename

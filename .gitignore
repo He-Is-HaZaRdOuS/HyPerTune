@@ -1,3 +1,12 @@
-.txt
-.mtx
-.hgr
+*.txt
+*.mtx
+*.hgr
+*.patoh
+*.zip
+*.ods
+*.csv
+kahypar_logs
+patoh_logs
+kahypar_timed_out
+patoh_timed_out
+venv

@@ -2,15 +2,15 @@ import pandas as pd
 import os
 
 # Read input data
-input_file = 'input_data.csv'
+input_file = 'preset_data.csv'
 output_file = 'best_vs_second_best_vs_worst.txt'
 
 # Load data
 df = pd.read_csv(input_file)
 
 # Ensure necessary columns exist
-if not {'Matrix', 'Preset', 'Average - Cut'}.issubset(df.columns):
-    raise ValueError("Input file must contain 'Matrix', 'Preset', and 'Average - Cut' columns.")
+if not {'Matrix', 'Preset', 'Cut'}.issubset(df.columns):
+    raise ValueError("Input file must contain 'Matrix', 'Preset', and 'Cut' columns.")
 
 # Function to extract just the filename from the full path, checking for valid strings
 def get_filename_from_path(file_path):
@@ -27,19 +27,19 @@ results = []
 
 # Process each matrix
 for matrix, group in df.groupby('Matrix'):
-    sorted_group = group.sort_values(by='Average - Cut')  # Sort by Average - Cut
+    sorted_group = group.sort_values(by='Cut')  # Sort by Cut
 
     if len(sorted_group) < 3:
         continue  # Skip if there are less than 3 presets for this matrix
 
     best_preset = sorted_group.iloc[0]['Preset']
-    best_cut = sorted_group.iloc[0]['Average - Cut']
+    best_cut = sorted_group.iloc[0]['Cut']
 
     second_best_preset = sorted_group.iloc[1]['Preset']
-    second_best_cut = sorted_group.iloc[1]['Average - Cut']
+    second_best_cut = sorted_group.iloc[1]['Cut']
 
     worst_preset = sorted_group.iloc[-1]['Preset']  # Worst preset is the one with the highest cut
-    worst_cut = sorted_group.iloc[-1]['Average - Cut']
+    worst_cut = sorted_group.iloc[-1]['Cut']
 
     # Calculate ratios
     if second_best_cut == 0:  # Avoid division by zero

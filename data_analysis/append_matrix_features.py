@@ -1,17 +1,23 @@
 import pandas as pd
 
 # Load the two CSV files into pandas DataFrames
-csv_data = pd.read_csv("matrix_info.csv")
+csv_data = pd.read_csv("input_data.csv")
 matrix_features = pd.read_csv("matrix_features.csv")
 
-# Merge the two DataFrames based on the Matrix name
-# Assuming 'Matrix' in csv_data matches 'Matrix Name' in matrix_features
-merged_data = pd.merge(csv_data, matrix_features, left_on='Matrix', right_on='Matrix Name', how='left')
+csv_data = csv_data.fillna("TIMED_OUT")
 
-# Drop the 'Matrix Name' column from the merged data, as it's not needed
-merged_data = merged_data.drop(columns=['Matrix Name'])
+# Find the intersection of matrix names (ignoring case and potential extensions)
+intersecting_matrices = pd.merge(
+    csv_data, matrix_features, left_on='Matrix', right_on='Matrix Name', how='inner'
+)
 
-# Save the merged DataFrame back to a CSV
-merged_data.to_csv("merged_csv_data.csv", index=False)
+# Replace NaN values with "N/A"
+intersecting_matrices = intersecting_matrices.fillna("N/A")
 
-print("Matrix features have been successfully appended to the CSV data.")
+# Drop the redundant 'Matrix Name' column
+intersecting_matrices = intersecting_matrices.drop(columns=['Matrix Name'])
+
+# Save the intersecting matrices to a new CSV
+intersecting_matrices.to_csv("matrix_data.csv", index=False)
+
+print("A new CSV containing only intersecting matrices has been saved as 'matrix_data.csv'.")

@@ -7,7 +7,7 @@ TARGET_PRESETS = {
 }
 
 # Read the raw CSV file
-input_csv = "input_data.csv"  # Change this to your actual input file
+input_csv = "preset_data.csv"  # Change this to your actual input file
 output_csv = "sorted_preset_cut_comparison.csv"
 
 # Load data
