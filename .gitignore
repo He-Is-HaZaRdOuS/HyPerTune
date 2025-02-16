@@ -5,6 +5,7 @@
 *.zip
 *.ods
 *.csv
+*.png
 kahypar_logs
 patoh_logs
 kahypar_timed_out
