@@ -15,12 +15,22 @@ def process_row(row):
 
 # Apply the transformation to specified columns
 columns = [
-    'dir_full_first', 'dir_full_worst',
-    'dir_lazy_first', 'dir_lazy_worst',
-    'dir_ml_first', 'dir_ml_worst',
-    'rec_full_first', 'rec_full_worst',
-    'rec_lazy_first', 'rec_lazy_worst',
-    'rec_ml_first', 'rec_ml_worst'
+    'dir_full_first', 
+'dir_full_worst',
+    'dir_lazy_first', 
+'dir_lazy_worst',
+    'dir_ml_first',
+ 'dir_ml_worst',
+    'rec_full_first', 
+'rec_full_worst',
+    'rec_lazy_first',
+ 'rec_lazy_worst',
+    'rec_ml_first', 
+'rec_ml_worst'
+#'km1_kKaHyPar_sea20_c-type_ml_style_i-bp-algorithm_worst_fit_r-type_kway_fm_hyperflow_cutter_km1.ini',
+#'km1_kKaHyPar_sea20_c-type_ml_style_i-bp-algorithm_worst_fit_r-type_kway_fm_km1.ini',
+#'km1_rKaHyPar_sea20_c-type_heavy_lazy_i-bp-algorithm_worst_fit_r-type_twoway_fm_hyperflow_cutter.ini',
+#'km1_rKaHyPar_sea20_c-type_heavy_lazy_i-bp-algorithm_worst_fit_r-type_twoway_fm.ini',
 ]
 
 # Create a new DataFrame with processed values
@@ -35,4 +45,4 @@ for idx, row in df[columns].iterrows():
     df_processed.loc[idx, columns] = processed_values
 
 # Save the processed DataFrame to a new CSV file
-df_processed.to_csv('matrix_data_processed.csv', index=False)
+df_processed.to_csv('matrix_data_processed12.csv', index=False)
