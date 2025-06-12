@@ -6,8 +6,8 @@
 *.ods
 *.csv
 *.png
-kahypar_logs
-patoh_logs
-kahypar_timed_out
-patoh_timed_out
+*.xlsx
+*.log
+*.npz
+*.npy
 venv

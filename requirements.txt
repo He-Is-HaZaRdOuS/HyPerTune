@@ -1,6 +1,0 @@
-ssgetpy==1.0rc2
-pandas
-numpy
-matplotlib
-scikit-learn
-seaborn

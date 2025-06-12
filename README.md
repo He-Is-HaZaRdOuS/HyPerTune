@@ -1,57 +1,79 @@
-# HyPerTune-tools
+# HyPerTune: Hypergraph Partitioning Performance Tuning with ML/DL
 
-**HyPerTune-tools** is a suite of scripts designed to automate the benchmarking and data analysis of the **Kahypar** and **PaToH** programs. These tools are built to handle hundreds of matrices, enabling you to convert matrix files, generate preset variations, run performance benchmarks, and analyze the results efficiently.
+HyPerTune is a machine learning and deep learning-based framework for high-performance hypergraph partitioning parameter tuning.
 
-## ⚠️ Usage Notice
-
-Before running any scripts, **you must edit them to adjust file paths** to match your system's directory structure. Many scripts include absolute or relative file paths that need to be customized for your environment.
-
-### How to Update Paths:
-1. Open the relevant script in a text editor (e.g., VS Code, nano, vim).
-2. Locate file paths inside the script (e.g., `/home/user/matrices/` or `./logs/`).
-3. Modify them to match your local directory setup.
-4. Save the changes before running the script.
+Instead of performing expensive partitioning operations at runtime, HyPerTune **predicts the optimal preset configuration** (e.g., preset type in KaHyPar or PaToH) for a given sparse matrix or hypergraph. It uses supervised learning models trained on historical performance data.
 
 ---
 
-## Overview
+## Project Goals
 
-This repository includes scripts and tools for:
+- Automate dataset construction by downloading, converting, and synthesizing matrices
+- Benchmark hypergraph partitioners with preset variations, collecting runtime and quality metrics
+- Dataset construction integrates with external tools like:
+  - [KaHyPar](https://github.com/kahypar/kahypar)
+  - [PaToH](https://faculty.cc.gatech.edu/~umit/software.html)
+  - [MatGen](https://github.com/He-Is-HaZaRdOuS/MatGen) for matrix synthesis
+- Extract deep embedded features from matrices via deep learning models
+- Train ML/DL models to predict the best preset configuration for a given matrix
+---
 
-1. **Matrix Conversion**: Converting `.mtx` files (Matrix Market format) to `.hgr` files (Hypergraph format).
-2. **Preset Generation**: Creating variations of preset configurations to be tested with matrices.
-3. **Benchmarking**: Running benchmarking tasks on matrices with preset variations using the **Kahypar** and **PaToH** programs.
-4. **Data Analysis**: Collecting benchmarking results, processing them, and performing analysis.
-5. **Timeout Handling**: Managing timeouts for benchmarking tasks that may take too long.
+## Usage
 
-## Repository Structure
+This repository focuses on **tuning** workflows — training, predicting, and analyzing preset choices. For matrix generation and dataset extension, refer to [MatGen](https://github.com/He-Is-HaZaRdOuS/MatGen).
 
-The repository is organized as follows:
+---
 
-### Subfolders
 
-- **`*_logs/`**: Folder where log files from benchmarking tasks are stored. Contains detailed logs of all benchmarking runs.
-- **`matrices/`**: Folder containing `.mtx` files (Matrix Market format) to be used for benchmarking.
-- **`presets/`**: Folder for preset configuration files used during benchmarking for the **KaHyPar** program.
-- **`data_analysis/`**: Folder where the processed results of the benchmarking tasks are stored, including any visualizations or data analysis outputs.
-- **`data_gathering/`**: Folder where scripts for gathering and preparing matrix data are stored.
-- **`benchmarking/`**: Folder containing the core benchmarking scripts, including scripts for initiating benchmarking tasks and handling results.
-- **`*_timed_out/`**: Folder where benchmarking tasks that exceeded their time limit are placed.
+## Folder Structure
 
-## Installation
+- `data/` — Holds static artifacts like partitioning logs, CSV datasets and DL-learned features.
+- `scripts/` — Utility scripts for downloading and pruning matrices.
+- `model/` — Contains model definitions, training, and evaluation code.
+- `results/` — Stores output files, logs, and metrics from experiments.
+- `generation/` — Contains scripts or placeholders for synthetic data generation.
+- `matrices/` — Input data matrices.
+- `partitioning/` — Contains automation scripts for running partitioners (e.g., KaHyPar or PaToH) and managing their outputs.
+- `preprocessing/` — Various scripts for preparing and processing raw data.
+- `visuals/` — Scripts and generated figures for result visualization.
 
-To use **HyPerTune-tools**, ensure you have the following:
+---
 
-1. **Python 3.6+** installed.
-2. **Bash** available (for running shell scripts).
-3. An internet connection for downloading matrices and dependencies.
+## Overall Workflow & Data Flow
 
-To install dependencies, clone the repository and install Python requirements:
-
-```bash
-git clone https://github.com/He-Is-HaZaRdOuS/HyPerTune-tools
-cd HyPerTune-tools
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+```text
+        ┌─────────────┐
+        │ Matrix Data │
+        │ Acquisition │
+        └──────┬──────┘
+               │ .mtx files (Matrix Market format)
+               │
+       ┌───────▼──────────┐
+       │ Conversion to    │
+       │ Hypergraph Files │
+       │ (.hgr, .patoh)   │
+       └───────▼──────────┘
+               │
+       ┌───────▼────────────────┐
+       │ Benchmarking with      │
+       │ KaHyPar & PaToH using  │
+       │ many preset configs    │
+       └───────▼────────────────┘
+               │ Runtime, quality, memory
+               │ metrics + logs
+       ┌───────▼─────────────┐
+       │ Data Processing &   │
+       │ Label Generation    │
+       └───────▼─────────────┘
+               │
+       ┌───────▼────────────┐
+       │ Feature Extraction │
+       └───────▼────────────┘
+               │
+       ┌───────▼──────────────┐
+       │ ML/DL Model Training │
+       └───────▼──────────────┘
+               │
+       ┌───────▼──────────┐
+       │ Preset Prediction│
+       └──────────────────┘
