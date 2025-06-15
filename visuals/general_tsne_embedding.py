@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -5,94 +7,49 @@ from sklearn.manifold import TSNE
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 
-# --------- Load Data ---------
-ml_ready_dir = "../data/ml_ready/"
+# Load precomputed embeddings and labels
+embeddings_dir = "../data/dl_features/6class_bitiledlstm"  # Change if needed
 
-input_filename = "DISCRETIZED_matrix_data_dir_rec_2class.csv"
-
-input_csv = f"{ml_ready_dir}{input_filename}"
-
-df = pd.read_csv(input_csv)
-
-# Automatically detect target binary label columns (all with only 0/1 values)
-target_columns = [
-    col
-    for col in df.columns
-    if set(df[col].unique()) <= {0, 1} and col.startswith(("dir", "rec"))
-]
-
-# Drop non-feature columns
-drop_columns = (
-    [
-        "Matrix",
-        "Variant Name",
-        "Group",
-        "Kind",
-        "Operation",
-        "Method",
-        "Generation Time(S)",
-        "Match NNZ",
-    ]
-    + target_columns
-    + [
-        "value_min",
-        "value_max",
-        "value_avg",
-        "value_std",
-        "row_min_min",
-        "row_min_max",
-        "row_min_mean",
-        "row_min_std",
-        "row_max_min",
-        "row_max_max",
-        "row_max_mean",
-        "row_max_std",
-        "row_mean_min",
-        "row_mean_max",
-        "row_mean_mean",
-        "row_mean_std",
-        "row_std_min",
-        "row_std_max",
-        "row_std_mean",
-        "row_std_std",
-        "row_median_min",
-        "row_median_max",
-        "row_median_mean",
-        "row_median_std",
-        "col_min_min",
-        "col_min_max",
-        "col_min_mean",
-        "col_min_std",
-        "col_max_min",
-        "col_max_max",
-        "col_max_mean",
-        "col_max_std",
-        "col_mean_min",
-        "col_mean_max",
-        "col_mean_mean",
-        "col_mean_std",
-        "col_std_min",
-        "col_std_max",
-        "col_std_mean",
-        "col_std_std",
-        "col_median_min",
-        "col_median_max",
-        "col_median_mean",
-        "col_median_std",
-        "norm_1",
-        "norm_inf",
-        "frobenius_norm",
-        "estimated_condition_number",
-        "num_empty_rows",
-        "num_empty_cols",
-    ]
+output_filename = "multilabel_tsne_nopos6c.html"
+pos_data = np.load(
+    os.path.join(embeddings_dir, "data_True.npz"), allow_pickle=True
 )
-X = df.drop(columns=drop_columns)
-y = df[target_columns]
+nopos_data = np.load(
+    os.path.join(embeddings_dir, "data_False.npz"), allow_pickle=True
+)
+print(pos_data.files)
+print(pos_data["embeddings"].shape)
 
-# --------- Standardize Features ---------
+
+X_pos = pos_data["embeddings"]
+y_pos = pos_data["labels"]
+X_nopos = nopos_data["embeddings"]
+y_nopos = nopos_data["labels"]
+
+print("X_pos shape:", X_pos.shape)
+print("X_nopos shape:", X_nopos.shape)
+
+
+# Load embeddings and labels
+# X_pos = np.load(os.path.join(embeddings_dir, "embeddings_pos.npy"))
+# X_nopos = np.load(os.path.join(embeddings_dir, "embeddings_nopos.npy"))
+# y_pos = np.load(os.path.join(embeddings_dir, "labels_pos.npy"))
+# y_nopos = np.load(os.path.join(embeddings_dir, "labels_nopos.npy"))
+X_nopos = X_nopos[-515:]
+X_pos = X_pos[-515:]
+y_nopos = y_nopos[-515:]
+y_pos = y_pos[-515:]
+
+X = X_nopos
+y = y_nopos
+
 scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+X_pos = scaler.fit_transform(X_pos)
+X_nopos = scaler.fit_transform(X_nopos)
+
+X_scaled = X_nopos
+print("X_scaled.shape:", X_scaled.shape)
+
 
 # --------- Analyze Label Types ---------
 label_sums = y.sum(axis=1)
@@ -111,7 +68,13 @@ point_type = np.full(X.shape[0], fill_value="Unknown", dtype=object)
 point_type[mask_noclass] = "no_class"
 
 # Create string label names for clean points
-clean_label_names = y_clean_raw.idxmax(axis=1).values
+# If original columns are available (e.g., via y_df.columns)
+if isinstance(y, pd.DataFrame):
+    label_names = y.columns
+    clean_label_names = label_names[y_clean_raw.to_numpy().argmax(axis=1)]
+else:
+    clean_label_names = y_clean_raw.argmax(axis=1)  # integer labels
+
 final_labels[mask_clean] = clean_label_names
 point_type[mask_clean] = "clean"
 
@@ -164,13 +127,13 @@ fig = px.scatter(
 fig.update_traces(marker=dict(size=5, opacity=0.8))
 fig.update_layout(margin=dict(l=0, r=0, b=0, t=30))
 
-fig.write_html("multilabel_tsne.html")
+fig.write_html(output_filename)
 fig.show()
 
 # --------- Print Label Counts ---------
 from collections import Counter
 
 label_counts = Counter(final_labels)
-print(f"Final label counts for {file_path}:")
+print("Final label counts for Embedded Features:")
 for label, count in label_counts.items():
     print(f"{label}: {count}")

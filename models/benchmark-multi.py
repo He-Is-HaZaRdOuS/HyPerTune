@@ -5,25 +5,36 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
 
 # Classifiers
 from sklearn.ensemble import (
     ExtraTreesClassifier,
+    GradientBoostingClassifier,
     HistGradientBoostingClassifier,
     RandomForestClassifier,
+    StackingClassifier,
+    VotingClassifier,
 )
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import multilabel_confusion_matrix
 from sklearn.model_selection import KFold, cross_validate, train_test_split
 from sklearn.multioutput import MultiOutputClassifier
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 
 warnings.filterwarnings("ignore")
 
 # Load your dataset
-file_path = "DISCRETIZED_dir_rec_2class.csv"
-df = pd.read_csv(file_path, low_memory=False)
+ml_ready_dir = "../data/ml_ready/"
+file_name = "pruned_multilabel_DISCRETIZED_matrix_data_dir_rec_2class.csv"
+input_csv = f"{ml_ready_dir}{file_name}"
+df = pd.read_csv(input_csv, low_memory=False)
 df = df.apply(pd.to_numeric, errors="coerce")  # Non-numeric data becomes NaN
 df = df.fillna(0)  # Replace NaN with 0, or another meaningful default
 
@@ -98,8 +109,8 @@ drop_columns = (
         "norm_inf",
         "frobenius_norm",
         "estimated_condition_number",
-        "num_empty_rows",
-        "num_empty_cols",
+        # "num_empty_rows",
+        # "num_empty_cols",
     ]
 )
 
@@ -125,6 +136,23 @@ params = {
     "verbosity": 0,  # show some info but not flood logs
 }
 
+# Define base models
+base_learners = [
+    ("gb", GradientBoostingClassifier(n_estimators=100, max_depth=3)),
+    ("rf", RandomForestClassifier(n_estimators=100, max_depth=3)),
+    ("xgb", XGBClassifier(n_estimators=100, max_depth=3)),
+    ("lgb", LGBMClassifier(n_estimators=100, max_depth=3)),
+    (
+        "cat",
+        CatBoostClassifier(
+            iterations=100, depth=3, learning_rate=0.1, verbose=0
+        ),
+    ),
+]
+
+# Meta-model for stacking
+meta_model = LogisticRegression()
+
 # Classifier dictionary
 classifiers = {
     "XGBoost": XGBClassifier(
@@ -133,18 +161,18 @@ classifiers = {
         verbosity=0,
         random_state=42,
     ),
-    #    "LightGBM": LGBMClassifier(**params),
+    "LightGBM": LGBMClassifier(**params),
     "RandomForest": RandomForestClassifier(random_state=42),
-    #    "GradientBoosting": GradientBoostingClassifier(random_state=42),
-    #    "KNN": KNeighborsClassifier(n_jobs=-1),
+    "GradientBoosting": GradientBoostingClassifier(random_state=42),
+    "KNN": KNeighborsClassifier(n_jobs=-1),
     #    'Dummy': DummyClassifier(strategy="most_frequent"),
-    #    'SVM': SVC(probability=True, random_state=42),
-    #    'SVM_linear': SVC(kernel='linear', probability=True, random_state=42),
-    #    'SVM_poly': SVC(kernel='poly', probability=True, random_state=42),
-    #    'SVM_sigmoid': SVC(kernel='sigmoid', probability=True, random_state=42),
+    "SVM": SVC(probability=True, random_state=42),
+    "SVM_linear": SVC(kernel="linear", probability=True, random_state=42),
+    "SVM_poly": SVC(kernel="poly", probability=True, random_state=42),
+    "SVM_sigmoid": SVC(kernel="sigmoid", probability=True, random_state=42),
     #    'LogisticRegression': LogisticRegression(random_state=42),
     #    'AdaBoost': AdaBoostClassifier(random_state=42),
-    #    'CatBoost': CatBoostClassifier(random_state=42, verbose=0),
+    "CatBoost": CatBoostClassifier(random_state=42, verbose=0),
     "ExtraTrees": ExtraTreesClassifier(random_state=42),
     #    'NaiveBayes': GaussianNB(),
     #    'LDA': LinearDiscriminantAnalysis(),
@@ -163,7 +191,7 @@ classifiers = {
         n_iter_no_change=50,
         random_state=42,
     ),
-    #    'DecisionTree': DecisionTreeClassifier(random_state=42),
+    "DecisionTree": DecisionTreeClassifier(random_state=42),
     #    'Bagging': BaggingClassifier(estimator=DecisionTreeClassifier(), random_state=42),
     #    'Voting': VotingClassifier(estimators=[
     #        ('rf', RandomForestClassifier(random_state=42)),
@@ -176,6 +204,19 @@ classifiers = {
     #        ('lr', LogisticRegression(random_state=42))
     #    ], final_estimator=LogisticRegression()),
     "HistGradientBoosting": HistGradientBoostingClassifier(random_state=42),
+    "Stacking": MultiOutputClassifier(
+        StackingClassifier(estimators=base_learners, final_estimator=meta_model)
+    ),
+    "voting_soft": MultiOutputClassifier(
+        VotingClassifier(
+            estimators=[
+                ("xgb", XGBClassifier(n_estimators=100, max_depth=3)),
+                ("lgb", LGBMClassifier(n_estimators=100, max_depth=3)),
+                ("svm", SVC(probability=True)),
+            ],
+            voting="soft",
+        )
+    ),
     #    'Ridge': RidgeClassifier(random_state=42),
     #    'GaussianProcess': GaussianProcessClassifier(kernel=RBF(), random_state=42),
     #    'PassiveAggressive': PassiveAggressiveClassifier(random_state=42),

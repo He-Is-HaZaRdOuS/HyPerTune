@@ -6,8 +6,10 @@
 *.ods
 *.csv
 *.png
-*.xlsx
+*.xlsx*
 *.log
 *.npz
 *.npy
+*.html
+*.drawio
 venv

@@ -2,33 +2,169 @@ import os
 import re
 from collections import defaultdict
 
+import matplotlib
+
+matplotlib.use("Agg")  # Use non-GUI backend
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
-from sklearn.model_selection import GroupKFold, cross_validate
+import seaborn as sns
+from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
+
+# Classifiers
+from sklearn.ensemble import (
+    ExtraTreesClassifier,
+    GradientBoostingClassifier,
+    HistGradientBoostingClassifier,
+    RandomForestClassifier,
+)
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    classification_report,
+    multilabel_confusion_matrix,
+)
+from sklearn.model_selection import (
+    GroupKFold,
+    cross_validate,
+)
 from sklearn.multioutput import MultiOutputClassifier
-from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 ml_ready_dir = "../data/ml_ready/"
-results_dir = "../data/results/"
+results_dir = "../results/"
+os.makedirs(f"{results_dir}/confusion_matrices/", exist_ok=True)
+os.makedirs(f"{results_dir}/feature_importance/", exist_ok=True)
 output_filename = "benchmark_results_summary.csv"
 output_pivot = "results_summary_pivot.csv"
 output_results_csv = f"{results_dir}{output_filename}"
 output_pivot_csv = f"{results_dir}{output_pivot}"
 
-# Classifiers
+params = {
+    "random_state": 42,
+    "n_estimators": 100,
+    "learning_rate": 0.1,
+    "max_bin": 64,  # default is 255
+    "max_depth": 4,
+    "num_leaves": 20,
+    "min_data_in_leaf": 30,  # lowered from 120
+    "feature_fraction": 0.8,  # randomly select 80% of features per tree
+    "bagging_fraction": 0.8,  # randomly select 80% of data per iteration
+    "bagging_freq": 5,
+    "lambda_l1": 1.0,
+    "lambda_l2": 1.0,
+    "verbosity": 0,
+    "n_jobs": -1,
+}
+
+# Define base models
+base_learners = [
+    ("gb", GradientBoostingClassifier(n_estimators=100, max_depth=3)),
+    ("rf", RandomForestClassifier(n_estimators=100, max_depth=3)),
+    (
+        "xgb",
+        XGBClassifier(
+            n_estimators=100,
+            max_depth=3,
+            base_score=0.5,
+        ),
+    ),
+    ("lgb", LGBMClassifier(n_estimators=100, max_depth=3)),
+    (
+        "cat",
+        CatBoostClassifier(
+            iterations=100, depth=3, learning_rate=0.1, verbose=0
+        ),
+    ),
+]
+
+# Meta-model for stacking
+meta_model = LogisticRegression()
+
+# Classifier dictionary
 classifiers = {
     "XGBoost": XGBClassifier(
         use_label_encoder=False,
         eval_metric="logloss",
         verbosity=0,
         random_state=42,
+        base_score=0.5,
     ),
-    "RandomForest": RandomForestClassifier(random_state=42),
-    "MLP": MLPClassifier(random_state=42, max_iter=1000),
+    "LightGBM": LGBMClassifier(**params),
+    # "RandomForest": RandomForestClassifier(random_state=42),
+    # "GradientBoosting": GradientBoostingClassifier(random_state=42),
+    # "KNN": KNeighborsClassifier(n_jobs=-1),
+    #    'Dummy': DummyClassifier(strategy="most_frequent"),
+    # "SVM": SVC(probability=True, random_state=42),
+    # "SVM_linear": SVC(kernel="linear", probability=True, random_state=42),
+    # "SVM_poly": SVC(kernel="poly", probability=True, random_state=42),
+    # "SVM_sigmoid": SVC(kernel="sigmoid", probability=True, random_state=42),
+    #    'LogisticRegression': LogisticRegression(random_state=42),
+    #    'AdaBoost': AdaBoostClassifier(random_state=42),
+    # "CatBoost": CatBoostClassifier(random_state=42, verbose=0),
+    # "ExtraTrees": ExtraTreesClassifier(random_state=42),
+    #    'NaiveBayes': GaussianNB(),
+    #    'LDA': LinearDiscriminantAnalysis(),
+    #    'QDA': QuadraticDiscriminantAnalysis(),
+    # "MLP": MLPClassifier(random_state=42, max_iter=1000, solver="adam"),
+    # "MLP_Optimized": MLPClassifier(
+    #     hidden_layer_sizes=(256, 128),
+    #     activation="relu",
+    #     solver="adam",
+    #     alpha=1e-4,
+    #     learning_rate="adaptive",
+    #     learning_rate_init=1e-3,
+    #     max_iter=5000,
+    #     early_stopping=True,
+    #     validation_fraction=0.1,
+    #     n_iter_no_change=50,
+    #     random_state=42,
+    # ),
+    # "DecisionTree": DecisionTreeClassifier(random_state=42),
+    #    'Bagging': BaggingClassifier(estimator=DecisionTreeClassifier(), random_state=42),
+    #    'Voting': VotingClassifier(estimators=[
+    #        ('rf', RandomForestClassifier(random_state=42)),
+    #        ('svm', SVC(probability=True, random_state=42)),
+    #        ('lr', LogisticRegression(random_state=42))
+    #    ], voting='soft'),
+    #    'Stacking': StackingClassifier(estimators=[
+    #        ('rf', RandomForestClassifier(random_state=42)),
+    #        ('svm', SVC(probability=True, random_state=42)),
+    #        ('lr', LogisticRegression(random_state=42))
+    #    ], final_estimator=LogisticRegression()),
+    "HistGradientBoosting": HistGradientBoostingClassifier(random_state=42),
+    # "Stacking": MultiOutputClassifier(
+    #     StackingClassifier(estimators=base_learners, final_estimator=meta_model)
+    # ),
+    # "voting_soft": MultiOutputClassifier(
+    #     VotingClassifier(
+    #         estimators=[
+    #             ("xgb", XGBClassifier(n_estimators=100, max_depth=3)),
+    #             ("lgb", LGBMClassifier(n_estimators=100, max_depth=3)),
+    #             ("svm", SVC(probability=True)),
+    #         ],
+    #         voting="soft",
+    #     )
+    # ),
+    #    'Ridge': RidgeClassifier(random_state=42),
+    #    'GaussianProcess': GaussianProcessClassifier(kernel=RBF(), random_state=42),
+    #    'PassiveAggressive': PassiveAggressiveClassifier(random_state=42),
+    #    'NearestCentroid': NearestCentroid(),
 }
+
+# Classifiers
+# classifiers = {
+#     "XGBoost": XGBClassifier(
+#         use_label_encoder=False,
+#         eval_metric="logloss",
+#         verbosity=0,
+#         random_state=42,
+#         base_score=0.5,
+#     ),
+#     "RandomForest": RandomForestClassifier(random_state=42),
+#     "MLP": MLPClassifier(random_state=42, max_iter=1000),
+# }
 scoring = {
     "accuracy": "accuracy",
     "precision_macro": "precision_macro",
@@ -66,20 +202,81 @@ def load_embeddings(npz_path):
     return names, X
 
 
-def evaluate_cv(X_data, y_data, name, groups_override, dataset_name):
+def evaluate_detailed(
+    X_data, y_data, name, groups_override, dataset_name, feature_names=None
+):
     et = ExtraTreesClassifier(random_state=42).fit(X_data, y_data)
-    thr = np.percentile(et.feature_importances_, 30)
+    thr = np.percentile(et.feature_importances_, 10)
     idx = np.where(et.feature_importances_ >= thr)[0]
     X_sel = X_data[:, idx]
 
+    if feature_names is not None:
+        selected_feature_names = np.array(feature_names)[idx]
+    else:
+        selected_feature_names = [f"F{i}" for i in idx]
+
     results = []
+
     for clf_name, clf in classifiers.items():
+        print(f"Model: {clf_name}, Type: {name}")
         model = MultiOutputClassifier(clf, n_jobs=-1)
+
+        # Accumulate confusion matrices per label across folds
+        all_conf_matrices = {
+            label: np.zeros((2, 2), dtype=int) for label in target_columns
+        }
+
+        fold = 0
+        for train_idx, test_idx in group_kfold.split(
+            X_sel, y_data, groups_override
+        ):
+            model.fit(X_sel[train_idx], y_data[train_idx])
+            y_pred = model.predict(X_sel[test_idx])
+            y_true = y_data[test_idx]
+
+            # === Per-class F1 metrics ===
+            report = classification_report(
+                y_true, y_pred, output_dict=True, zero_division=0
+            )
+            for i, label in enumerate(report.keys()):
+                if label in ["accuracy", "macro avg", "weighted avg"]:
+                    continue
+                results.append(
+                    {
+                        "dataset": dataset_name,
+                        "embedding_type": name,
+                        "classifier": clf_name,
+                        "metric": f"f1_class_{label}",
+                        "score": report[label]["f1-score"],
+                    }
+                )
+
+            # === Accumulate confusion matrices ===
+            cm = multilabel_confusion_matrix(y_true, y_pred)
+            for i, (label, matrix) in enumerate(zip(target_columns, cm)):
+                all_conf_matrices[label] += matrix
+
+            fold += 1
+
+        # === Save final confusion matrices after all folds ===
+        confmat_dir = os.path.join(results_dir, "confusion_matrices")
+        os.makedirs(confmat_dir, exist_ok=True)
+        for label, matrix in all_conf_matrices.items():
+            plt.figure(figsize=(3, 3))
+            sns.heatmap(matrix, annot=True, fmt="d", cmap="Blues")
+            plt.title(f"Total Confusion - {label}")
+            plt.xlabel("Predicted")
+            plt.ylabel("Actual")
+            filename = f"{dataset_name}_{name}_{clf_name}_{label.replace(' ', '_')}.png"
+            plt.savefig(os.path.join(confmat_dir, filename))
+            plt.close()
+
+        # === Average cross-validation scores ===
         scores = cross_validate(
-            model,
+            MultiOutputClassifier(clf, n_jobs=-1),
             X_sel,
             y_data,
-            cv=group_kfold.split(X_data, y_data, groups_override),
+            cv=group_kfold.split(X_sel, y_data, groups_override),
             scoring=scoring,
             n_jobs=-1,
         )
@@ -94,6 +291,30 @@ def evaluate_cv(X_data, y_data, name, groups_override, dataset_name):
                     "score": mean_score,
                 }
             )
+
+        # === Feature importance bar plot (after all folds) ===
+        if hasattr(clf, "feature_importances_") or isinstance(
+            clf, (RandomForestClassifier, ExtraTreesClassifier)
+        ):
+            clf.fit(X_sel, y_data)
+            importances = np.mean(
+                [est.feature_importances_ for est in clf.estimators_], axis=0
+            )
+            top_k = np.argsort(importances)[::-1][:20]
+            plt.figure(figsize=(14, 6))
+            sns.barplot(
+                x=importances[top_k], y=np.array(selected_feature_names)[top_k]
+            )
+            plt.title(
+                f"Feature Importances - {clf_name} - {dataset_name} ({name})"
+            )
+            plt.tight_layout()
+            os.makedirs(f"{results_dir}/feature_importance/", exist_ok=True)
+            plt.savefig(
+                f"{results_dir}/feature_importance/{dataset_name}_{name}_{clf_name}.png"
+            )
+            plt.close()
+
     return results
 
 
@@ -125,6 +346,7 @@ for input_filename in os.listdir(ml_ready_dir):
         and (col.startswith("dir") or col.startswith("rec"))
     ]
 
+    # Drop non-feature columns
     drop_columns = (
         [
             "Matrix",
@@ -139,23 +361,145 @@ for input_filename in os.listdir(ml_ready_dir):
         ]
         + target_columns
         + [
-            col
-            for col in df.columns
-            if any(
-                prefix in col
-                for prefix in [
-                    "value_",
-                    "row_",
-                    "col_",
-                    "norm_",
-                    "frobenius_norm",
-                    "estimated_condition_number",
-                    "num_empty_rows",
-                    "num_empty_cols",
-                ]
-            )
+            "value_min",
+            "value_max",
+            "value_avg",
+            "value_std",
+            "row_min_min",
+            "row_min_max",
+            "row_min_mean",
+            "row_min_std",
+            "row_max_min",
+            "row_max_max",
+            "row_max_mean",
+            "row_max_std",
+            "row_mean_min",
+            "row_mean_max",
+            "row_mean_mean",
+            "row_mean_std",
+            "row_std_min",
+            "row_std_max",
+            "row_std_mean",
+            "row_std_std",
+            "row_median_min",
+            "row_median_max",
+            "row_median_mean",
+            "row_median_std",
+            "col_min_min",
+            "col_min_max",
+            "col_min_mean",
+            "col_min_std",
+            "col_max_min",
+            "col_max_max",
+            "col_max_mean",
+            "col_max_std",
+            "col_mean_min",
+            "col_mean_max",
+            "col_mean_mean",
+            "col_mean_std",
+            "col_std_min",
+            "col_std_max",
+            "col_std_mean",
+            "col_std_std",
+            "col_median_min",
+            "col_median_max",
+            "col_median_mean",
+            "col_median_std",
+            "norm_1",
+            "norm_inf",
+            "frobenius_norm",
+            "estimated_condition_number",
+            # "num_empty_rows",
+            # "num_empty_cols",
         ]
     )
+
+    # drop_columns = (
+    #     [
+    #         "Matrix",
+    #         "Variant Name",
+    #         "Group",
+    #         "Kind",
+    #         "Operation",
+    #         "Method",
+    #         "Generation Time(S)",
+    #         "Match NNZ",
+    #     ]
+    #     + target_columns
+    #     + [
+    #         "value_min",
+    #         "value_max",
+    #         "value_avg",
+    #         "value_std",
+    #         "row_min_min",
+    #         "row_min_max",
+    #         "row_min_mean",
+    #         "row_min_std",
+    #         "row_max_min",
+    #         "row_max_max",
+    #         "row_max_mean",
+    #         "row_max_std",
+    #         "row_mean_min",
+    #         "row_mean_max",
+    #         "row_mean_mean",
+    #         "row_mean_std",
+    #         "row_std_min",
+    #         "row_std_max",
+    #         "row_std_mean",
+    #         "row_std_std",
+    #         "row_median_min",
+    #         "row_median_max",
+    #         "row_median_mean",
+    #         "row_median_std",
+    #         "col_min_min",
+    #         "col_min_max",
+    #         "col_min_mean",
+    #         "col_min_std",
+    #         "col_max_min",
+    #         "col_max_max",
+    #         "col_max_mean",
+    #         "col_max_std",
+    #         "col_mean_min",
+    #         "col_mean_max",
+    #         "col_mean_mean",
+    #         "col_mean_std",
+    #         "col_std_min",
+    #         "col_std_max",
+    #         "col_std_mean",
+    #         "col_std_std",
+    #         "col_median_min",
+    #         "col_median_max",
+    #         "col_median_mean",
+    #         "col_median_std",
+    #         "avg_distance_to_diagonal",
+    #         "avg_distance_to_diagonal / N",
+    #         "num_diagonals_with_nonzeros",
+    #         "nnz_bandwidth_std",
+    #         "nnz_diagonal",
+    #         "nnz_off_diagonal",
+    #         "num_structurally_unsymmetric_elements",
+    #         "norm_1",
+    #         "norm_inf",
+    #         "frobenius_norm",
+    #         "estimated_condition_number",
+    #         "num_empty_rows",
+    #         "num_empty_cols",
+    #         "row_sparsity_skew",
+    #         "col_sparsity_skew",
+    #         "row_nnz_entropy",
+    #         "col_nnz_entropy",
+    #         "Bandwidth / N",
+    #         "Profile / N",
+    #         "Row NNZ Median",
+    #         "Column NNZ Median",
+    #         "Row NNZ Max",
+    #         "Row NNZ Mean",
+    #         "Row NNZ STD",
+    #         "Density",
+    #         "Bandwidth STD",
+    #         "cosine_similarity_local",
+    #     ]
+    # )
 
     matrix_to_base = {m: base_matrix_name(m) for m in df["Matrix"]}
     base_to_all = defaultdict(list)
@@ -225,6 +569,7 @@ for input_filename in os.listdir(ml_ready_dir):
                 eval_metric="logloss",
                 verbosity=0,
                 random_state=42,
+                base_score=0.5,
             ),
             X_scaled,
             y,
@@ -245,6 +590,7 @@ for input_filename in os.listdir(ml_ready_dir):
                     eval_metric="logloss",
                     verbosity=0,
                     random_state=42,
+                    base_score=0.5,
                 ),
                 X_pos,
                 y_pos,
@@ -282,15 +628,134 @@ for input_filename in os.listdir(ml_ready_dir):
 
     # Run detailed evaluation with other classifiers
     all_results.extend(
-        evaluate_cv(X_scaled, y, "VANILLA", groups, input_filename)
+        evaluate_detailed(
+            X_scaled,
+            y,
+            "VANILLA",
+            groups,
+            input_filename,
+            feature_names=X.columns.tolist(),
+        )
     )
     if len(X_pos) > 0:
         all_results.extend(
-            evaluate_cv(X_pos, y_pos, "POS", groups_pos, input_filename)
+            evaluate_detailed(X_pos, y_pos, "POS", groups_pos, input_filename)
         )
     if len(X_nopos) > 0:
         all_results.extend(
-            evaluate_cv(X_nopos, y_nopos, "NOPOS", groups_nopos, input_filename)
+            evaluate_detailed(
+                X_nopos, y_nopos, "NOPOS", groups_nopos, input_filename
+            )
+        )
+
+    common_matrices = sorted(set(matrix_names_pos) & set(df["Matrix"]))
+
+    if common_matrices:
+        df_combined = df.set_index("Matrix").loc[common_matrices]
+        X_vanilla_combined = scaler_vanilla.transform(
+            df_combined.drop(columns=drop_columns, errors="ignore")
+        )
+        X_pos_combined = scaler_pos.transform(
+            X_pos[[matrix_names_pos.index(m) for m in common_matrices]]
+        )
+
+        X_concat = np.hstack([X_vanilla_combined, X_pos_combined])
+        y_concat = df_combined[target_columns].values
+        groups_concat = [matrix_to_base[m] for m in common_matrices]
+
+        try:
+            scores_combined = cross_validate(
+                XGBClassifier(
+                    use_label_encoder=False,
+                    eval_metric="logloss",
+                    verbosity=0,
+                    random_state=42,
+                    base_score=0.5,
+                ),
+                X_concat,
+                y_concat,
+                cv=group_kfold.split(X_concat, y_concat, groups_concat),
+                scoring=["accuracy"],
+                n_jobs=-1,
+            )
+            combined_acc = scores_combined["test_accuracy"].mean()
+        except Exception as e:
+            print(f"Failed COMBINED evaluation for {input_filename}: {e}")
+            combined_acc = None
+
+        if combined_acc is not None:
+            all_results.append(
+                {
+                    "dataset": input_filename,
+                    "embedding_type": "VANILLA+POS",
+                    "classifier": "XGBoost",
+                    "metric": "accuracy",
+                    "score": combined_acc,
+                }
+            )
+
+        # Run with all classifiers
+        all_results.extend(
+            evaluate_detailed(
+                X_concat, y_concat, "VANILLA+POS", groups_concat, input_filename
+            )
+        )
+
+    common_matrices_nopos = sorted(set(matrix_names_nopos) & set(df["Matrix"]))
+
+    if common_matrices_nopos:
+        df_combined = df.set_index("Matrix").loc[common_matrices_nopos]
+        X_vanilla_combined = scaler_vanilla.transform(
+            df_combined.drop(columns=drop_columns, errors="ignore")
+        )
+        X_nopos_combined = scaler_nopos.transform(
+            X_pos[[matrix_names_nopos.index(m) for m in common_matrices_nopos]]
+        )
+
+        X_concat = np.hstack([X_vanilla_combined, X_nopos_combined])
+        y_concat = df_combined[target_columns].values
+        groups_concat = [matrix_to_base[m] for m in common_matrices_nopos]
+
+        try:
+            scores_combined = cross_validate(
+                XGBClassifier(
+                    use_label_encoder=False,
+                    eval_metric="logloss",
+                    verbosity=0,
+                    random_state=42,
+                    base_score=0.5,
+                ),
+                X_concat,
+                y_concat,
+                cv=group_kfold.split(X_concat, y_concat, groups_concat),
+                scoring=["accuracy"],
+                n_jobs=-1,
+            )
+            combined_acc = scores_combined["test_accuracy"].mean()
+        except Exception as e:
+            print(f"Failed COMBINED evaluation for {input_filename}: {e}")
+            combined_acc = None
+
+        if combined_acc is not None:
+            all_results.append(
+                {
+                    "dataset": input_filename,
+                    "embedding_type": "VANILLA+NOPOS",
+                    "classifier": "XGBoost",
+                    "metric": "accuracy",
+                    "score": combined_acc,
+                }
+            )
+
+        # Run with all classifiers
+        all_results.extend(
+            evaluate_detailed(
+                X_concat,
+                y_concat,
+                "VANILLA+NOPOS",
+                groups_concat,
+                input_filename,
+            )
         )
 
 
