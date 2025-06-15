@@ -20,6 +20,8 @@ from sklearn.ensemble import (
     RandomForestClassifier,
 )
 from sklearn.linear_model import LogisticRegression
+
+# Classifiers
 from sklearn.metrics import (
     classification_report,
     multilabel_confusion_matrix,
@@ -29,6 +31,7 @@ from sklearn.model_selection import (
     cross_validate,
 )
 from sklearn.multioutput import MultiOutputClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
