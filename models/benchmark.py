@@ -106,7 +106,7 @@ classifiers = {
     #    'LogisticRegression': LogisticRegression(random_state=42),
     #    'AdaBoost': AdaBoostClassifier(random_state=42),
     # "CatBoost": CatBoostClassifier(random_state=42, verbose=0),
-    "ExtraTrees": ExtraTreesClassifier(random_state=42),
+    # "ExtraTrees": ExtraTreesClassifier(random_state=42),
     #    'NaiveBayes': GaussianNB(),
     #    'LDA': LinearDiscriminantAnalysis(),
     #    'QDA': QuadraticDiscriminantAnalysis(),
@@ -209,7 +209,7 @@ def evaluate_detailed(
     X_data, y_data, name, groups_override, dataset_name, feature_names=None
 ):
     et = ExtraTreesClassifier(random_state=42).fit(X_data, y_data)
-    thr = np.percentile(et.feature_importances_, 10)
+    thr = np.percentile(et.feature_importances_, 0)
     idx = np.where(et.feature_importances_ >= thr)[0]
     X_sel = X_data[:, idx]
 
@@ -248,6 +248,7 @@ def evaluate_detailed(
                     {
                         "dataset": dataset_name,
                         "embedding_type": name,
+                        "feature_count": len(idx),
                         "classifier": clf_name,
                         "metric": f"f1_class_{label}",
                         "score": report[label]["f1-score"],
@@ -289,34 +290,154 @@ def evaluate_detailed(
                 {
                     "dataset": dataset_name,
                     "embedding_type": name,
+                    "feature_count": len(idx),
                     "classifier": clf_name,
                     "metric": metric,
                     "score": mean_score,
                 }
             )
 
-        # === Feature importance bar plot (after all folds) ===
-        if hasattr(clf, "feature_importances_") or isinstance(
-            clf, (RandomForestClassifier, ExtraTreesClassifier)
-        ):
-            clf.fit(X_sel, y_data)
-            importances = np.mean(
-                [est.feature_importances_ for est in clf.estimators_], axis=0
-            )
-            top_k = np.argsort(importances)[::-1][:20]
-            plt.figure(figsize=(14, 6))
-            sns.barplot(
-                x=importances[top_k], y=np.array(selected_feature_names)[top_k]
-            )
-            plt.title(
-                f"Feature Importances - {clf_name} - {dataset_name} ({name})"
-            )
-            plt.tight_layout()
-            os.makedirs(f"{results_dir}/feature_importance/", exist_ok=True)
-            plt.savefig(
-                f"{results_dir}/feature_importance/{dataset_name}_{name}_{clf_name}.png"
-            )
-            plt.close()
+        # Ensure y_data is 1D for dir_ml_worst
+        if isinstance(y_data, pd.DataFrame):
+            y_label = y_data["dir_ml_worst"].values
+        else:
+            y_label = y_data[:, 0]  # assuming dir_ml_worst is first column
+
+        # === Feature importance visualization ===
+        try:
+            # Common tree-based model handler
+            importances = None
+
+            if isinstance(clf, (RandomForestClassifier, ExtraTreesClassifier)):
+                clf.fit(X_sel, y_label)
+                importances = np.mean(
+                    [est.feature_importances_ for est in clf.estimators_],
+                    axis=0,
+                )
+
+            elif clf_name.lower().startswith("lightgbm"):
+                clf = LGBMClassifier(**clf.get_params())
+                clf.fit(X_sel, y_label)
+                importances = clf.booster_.feature_importance(
+                    importance_type="gain"
+                )
+                importances = importances / importances.sum()
+
+            elif clf_name.lower().startswith("xgboost"):
+                clf = XGBClassifier(
+                    use_label_encoder=False, eval_metric="logloss"
+                )
+                clf.fit(X_sel, y_label)
+                importances = clf.feature_importances_
+                importances = importances / importances.sum()
+
+            # Plot if importances were computed
+            if importances is not None:
+                top_k = np.argsort(importances)[::-1][:20]
+                top_features = np.array(selected_feature_names)[top_k]
+
+                plt.figure(figsize=(14, 6))
+                sns.barplot(x=importances[top_k], y=top_features)
+                plt.title(
+                    f"Feature Importances - {clf_name} - {dataset_name} ({name})"
+                )
+                plt.tight_layout()
+
+                os.makedirs(f"{results_dir}/feature_importance/", exist_ok=True)
+                plt.savefig(
+                    f"{results_dir}/feature_importance/{dataset_name}_{name}_{clf_name}.png"
+                )
+                plt.close()
+
+        except Exception as e:
+            print(f"[!] Feature importance plotting failed: {e}")
+
+        # # === Feature importance visualization ===
+        # try:
+        #     if isinstance(
+        #         clf,
+        #         (
+        #             RandomForestClassifier,
+        #             ExtraTreesClassifier,
+        #         ),
+        #     ):
+        #         clf.fit(X_sel, y_data)
+        #         importances = np.mean(
+        #             [est.feature_importances_ for est in clf.estimators_],
+        #             axis=0,
+        #         )
+        #         top_k = np.argsort(importances)[::-1][:20]
+        #         plt.figure(figsize=(14, 6))
+        #         sns.barplot(
+        #             x=importances[top_k],
+        #             y=np.array(selected_feature_names)[top_k],
+        #         )
+        #         plt.title(
+        #             f"Feature Importances - {clf_name} - {dataset_name} ({name})"
+        #         )
+        #         plt.tight_layout()
+        #         os.makedirs(f"{results_dir}/feature_importance/", exist_ok=True)
+        #         plt.savefig(
+        #             f"{results_dir}/feature_importance/{dataset_name}_{name}_{clf_name}.png"
+        #         )
+        #         plt.close()
+
+        # elif clf_name.lower().startswith("lightgbm"):
+        #     importances_list = []
+
+        #     for i, label in enumerate(target_columns):
+        #         clf_single = LGBMClassifier(
+        #             random_state=42, **clf.get_params()
+        #         )
+        #         clf_single.fit(X_sel, y_data[:, i])
+        #         importances_list.append(clf_single.feature_importances_)
+
+        #     # Now safely average across all label-specific models
+        #     importances = np.mean(importances_list, axis=0)
+
+        #     top_k = np.argsort(importances)[::-1][:20]
+        #     plt.figure(figsize=(14, 6))
+        #     sns.barplot(
+        #         x=importances[top_k],
+        #         y=np.array(selected_feature_names)[top_k],
+        #     )
+        #     plt.title(
+        #         f"Feature Importances - {clf_name} - {dataset_name} ({name})"
+        #     )
+        #     plt.tight_layout()
+        #     os.makedirs(f"{results_dir}/feature_importance/", exist_ok=True)
+        #     plt.savefig(
+        #         f"{results_dir}/feature_importance/{dataset_name}_{name}_{clf_name}.png"
+        #     )
+        #     plt.close()
+
+        # elif clf_name.lower().startswith("xgboost"):
+        #     from xgboost import XGBClassifier
+        #     from xgboost import plot_importance as xgb_plot_importance
+
+        #     model = XGBClassifier()
+        #     model.fit(X_sel, y_data)
+
+        #     # Get top-k features
+        #     importances = model.feature_importances_
+        #     top_k = np.argsort(importances)[::-1][:20]
+        #     top_features = np.array(selected_feature_names)[top_k]
+
+        #     # Plot with custom figsize
+        #     fig, ax = plt.subplots(figsize=(14, 6))
+        #     xgb_plot_importance(
+        #         model, max_num_features=20, height=0.5, ax=ax
+        #     )
+        #     ax.set_yticklabels(top_features)
+        #     plt.title(f"XGBoost Feature Importance - {clf_name}")
+        #     plt.tight_layout()
+        #     plt.savefig(
+        #         f"{results_dir}/feature_importance/{dataset_name}_{name}_{clf_name}_xgb.png"
+        #     )
+        #     plt.close()
+
+        except Exception as e:
+            print(f"Failed to compute feature importances for {clf_name}: {e}")
 
     return results
 
@@ -350,72 +471,72 @@ for input_filename in os.listdir(ml_ready_dir):
     ]
 
     # Drop non-feature columns
-    drop_columns = (
-        [
-            "Matrix",
-            "Variant Name",
-            "Group",
-            "Kind",
-            "Operation",
-            "Method",
-            "Generation Time(S)",
-            "Match NNZ",
-            "cosine_similarity_local",
-        ]
-        + target_columns
-        + [
-            "value_min",
-            "value_max",
-            "value_avg",
-            "value_std",
-            "row_min_min",
-            "row_min_max",
-            "row_min_mean",
-            "row_min_std",
-            "row_max_min",
-            "row_max_max",
-            "row_max_mean",
-            "row_max_std",
-            "row_mean_min",
-            "row_mean_max",
-            "row_mean_mean",
-            "row_mean_std",
-            "row_std_min",
-            "row_std_max",
-            "row_std_mean",
-            "row_std_std",
-            "row_median_min",
-            "row_median_max",
-            "row_median_mean",
-            "row_median_std",
-            "col_min_min",
-            "col_min_max",
-            "col_min_mean",
-            "col_min_std",
-            "col_max_min",
-            "col_max_max",
-            "col_max_mean",
-            "col_max_std",
-            "col_mean_min",
-            "col_mean_max",
-            "col_mean_mean",
-            "col_mean_std",
-            "col_std_min",
-            "col_std_max",
-            "col_std_mean",
-            "col_std_std",
-            "col_median_min",
-            "col_median_max",
-            "col_median_mean",
-            "col_median_std",
-            "norm_1",
-            "norm_inf",
-            "frobenius_norm",
-            "estimated_condition_number",
-            # "num_empty_rows",
-            # "num_empty_cols",
-        ]
-    )
+    # drop_columns = (
+    #     [
+    #         "Matrix",
+    #         "Variant Name",
+    #         "Group",
+    #         "Kind",
+    #         "Operation",
+    #         "Method",
+    #         "Generation Time(S)",
+    #         "Match NNZ",
+    #         "cosine_similarity_local",
+    #     ]
+    #     + target_columns
+    #     + [
+    #         "value_min",
+    #         "value_max",
+    #         "value_avg",
+    #         "value_std",
+    #         "row_min_min",
+    #         "row_min_max",
+    #         "row_min_mean",
+    #         "row_min_std",
+    #         "row_max_min",
+    #         "row_max_max",
+    #         "row_max_mean",
+    #         "row_max_std",
+    #         "row_mean_min",
+    #         "row_mean_max",
+    #         "row_mean_mean",
+    #         "row_mean_std",
+    #         "row_std_min",
+    #         "row_std_max",
+    #         "row_std_mean",
+    #         "row_std_std",
+    #         "row_median_min",
+    #         "row_median_max",
+    #         "row_median_mean",
+    #         "row_median_std",
+    #         "col_min_min",
+    #         "col_min_max",
+    #         "col_min_mean",
+    #         "col_min_std",
+    #         "col_max_min",
+    #         "col_max_max",
+    #         "col_max_mean",
+    #         "col_max_std",
+    #         "col_mean_min",
+    #         "col_mean_max",
+    #         "col_mean_mean",
+    #         "col_mean_std",
+    #         "col_std_min",
+    #         "col_std_max",
+    #         "col_std_mean",
+    #         "col_std_std",
+    #         "col_median_min",
+    #         "col_median_max",
+    #         "col_median_mean",
+    #         "col_median_std",
+    #         "norm_1",
+    #         "norm_inf",
+    #         "frobenius_norm",
+    #         "estimated_condition_number",
+    #         # "num_empty_rows",
+    #         # "num_empty_cols",
+    #     ]
+    # )
 
     # drop_columns = (
     #     [
@@ -475,34 +596,127 @@ for input_filename in os.listdir(ml_ready_dir):
     #         "col_median_mean",
     #         "col_median_std",
     #         "avg_distance_to_diagonal",
-    #         "avg_distance_to_diagonal / N",
-    #         "num_diagonals_with_nonzeros",
-    #         "nnz_bandwidth_std",
-    #         "nnz_diagonal",
-    #         "nnz_off_diagonal",
-    #         "num_structurally_unsymmetric_elements",
+    #         "Bandwidth",
+    #         "Profile",
+    #         # "avg_distance_to_diagonal / N",
+    #         # "num_diagonals_with_nonzeros",
+    #         # "nnz_bandwidth_std",
+    #         # "nnz_diagonal",
+    #         # "nnz_off_diagonal",
+    #         # "num_structurally_unsymmetric_elements",
     #         "norm_1",
     #         "norm_inf",
     #         "frobenius_norm",
     #         "estimated_condition_number",
-    #         "num_empty_rows",
-    #         "num_empty_cols",
-    #         "row_sparsity_skew",
-    #         "col_sparsity_skew",
-    #         "row_nnz_entropy",
-    #         "col_nnz_entropy",
-    #         "Bandwidth / N",
-    #         "Profile / N",
-    #         "Row NNZ Median",
-    #         "Column NNZ Median",
-    #         "Row NNZ Max",
-    #         "Row NNZ Mean",
-    #         "Row NNZ STD",
-    #         "Density",
-    #         "Bandwidth STD",
+    #         # "num_empty_rows",
+    #         # "num_empty_cols",
+    #         # "row_sparsity_skew",
+    #         # "col_sparsity_skew",
+    #         # "row_nnz_entropy",
+    #         # "col_nnz_entropy",
+    #         # "Bandwidth / N",
+    #         # "Profile / N",
+    #         # "Row NNZ Median",
+    #         # "Column NNZ Median",
+    #         # "Row NNZ Max",
+    #         # "Row NNZ Mean",
+    #         # "Row NNZ STD",
+    #         # "Density",
+    #         # "Bandwidth STD",
     #         "cosine_similarity_local",
     #     ]
     # )
+
+    # Drop non-feature columnsAdd commentMore actions
+
+    drop_columns = (
+        [
+            "Matrix",
+            "Variant Name",
+            "Group",
+            "Kind",
+            "Operation",
+            "Method",
+            "Generation Time(S)",
+            "Match NNZ",
+        ]
+        + target_columns
+        + [
+            "value_min",
+            "value_max",
+            "value_avg",
+            "value_std",
+            "row_min_min",
+            "row_min_max",
+            "row_min_mean",
+            "row_min_std",
+            "row_max_min",
+            "row_max_max",
+            "row_max_mean",
+            "row_max_std",
+            "row_mean_min",
+            "row_mean_max",
+            "row_mean_mean",
+            "row_mean_std",
+            "row_std_min",
+            "row_std_max",
+            "row_std_mean",
+            "row_std_std",
+            "row_median_min",
+            "row_median_max",
+            "row_median_mean",
+            "row_median_std",
+            "col_min_min",
+            "col_min_max",
+            "col_min_mean",
+            "col_min_std",
+            "col_max_min",
+            "col_max_max",
+            "col_max_mean",
+            "col_max_std",
+            "col_mean_min",
+            "col_mean_max",
+            "col_mean_mean",
+            "col_mean_std",
+            "col_std_min",
+            "col_std_max",
+            "col_std_mean",
+            "col_std_std",
+            "col_median_min",
+            "col_median_max",
+            "col_median_mean",
+            "col_median_std",
+            "avg_distance_to_diagonal",
+            # "avg_distance_to_diagonal / N",
+            # "num_diagonals_with_nonzeros",
+            # "nnz_bandwidth_std",
+            # "nnz_diagonal",
+            # "nnz_off_diagonal",
+            # "num_structurally_unsymmetric_elements",
+            "norm_1",
+            "norm_inf",
+            "frobenius_norm",
+            "estimated_condition_number",
+            "num_empty_rows",
+            "num_empty_cols",
+            "row_sparsity_skew",
+            "col_sparsity_skew",
+            # "row_nnz_entropy",
+            # "col_nnz_entropy",
+            # "Bandwidth / N",
+            # "Profile / N",
+            "Bandwidth",
+            "Profile",
+            # "Row NNZ Median",
+            # "Column NNZ Median",
+            # "Row NNZ Max",
+            # "Row NNZ Mean",
+            "Row NNZ STD",
+            # "Density",
+            "Bandwidth STD",
+            "cosine_similarity_local",
+        ]
+    )
 
     matrix_to_base = {m: base_matrix_name(m) for m in df["Matrix"]}
     base_to_all = defaultdict(list)
@@ -559,75 +773,77 @@ for input_filename in os.listdir(ml_ready_dir):
     X = df.drop(columns=drop_columns, errors="ignore")
     y = df[target_columns].values
 
+    print(f"Selected {len(X.columns.tolist())} Features: {X.columns.tolist()}")
+
     scaler_vanilla = StandardScaler()
     X_scaled = scaler_vanilla.fit_transform(X)
 
     groups = [matrix_to_base[name] for name in df["Matrix"]]
 
-    # Run cross_validate for raw CSV features and POS embeddings (if available)
-    try:
-        scores_raw = cross_validate(
-            XGBClassifier(
-                use_label_encoder=False,
-                eval_metric="logloss",
-                verbosity=0,
-                random_state=42,
-                base_score=0.5,
-            ),
-            X_scaled,
-            y,
-            cv=group_kfold.split(X_scaled, y, groups),
-            scoring=["accuracy"],
-            n_jobs=-1,
-        )
-        raw_acc = scores_raw["test_accuracy"].mean()
-    except Exception as e:
-        print(f"Failed raw CSV evaluation for {input_filename}: {e}")
-        raw_acc = None
+    # # Run cross_validate for raw CSV features and POS embeddings (if available)
+    # try:
+    #     scores_raw = cross_validate(
+    #         XGBClassifier(
+    #             use_label_encoder=False,
+    #             eval_metric="logloss",
+    #             verbosity=0,
+    #             random_state=42,
+    #             base_score=0.5,
+    #         ),
+    #         X_scaled,
+    #         y,
+    #         cv=group_kfold.split(X_scaled, y, groups),
+    #         scoring=["accuracy"],
+    #         n_jobs=-1,
+    #     )
+    #     raw_acc = scores_raw["test_accuracy"].mean()
+    # except Exception as e:
+    #     print(f"Failed raw CSV evaluation for {input_filename}: {e}")
+    #     raw_acc = None
 
-    try:
-        if len(X_pos) > 0:
-            scores_pos = cross_validate(
-                XGBClassifier(
-                    use_label_encoder=False,
-                    eval_metric="logloss",
-                    verbosity=0,
-                    random_state=42,
-                    base_score=0.5,
-                ),
-                X_pos,
-                y_pos,
-                cv=group_kfold.split(X_pos, y_pos, groups_pos),
-                scoring=["accuracy"],
-                n_jobs=-1,
-            )
-            pos_acc = scores_pos["test_accuracy"].mean()
-        else:
-            pos_acc = None
-    except Exception as e:
-        print(f"Failed POS embedding evaluation for {input_filename}: {e}")
-        pos_acc = None
+    # try:
+    #     if len(X_pos) > 0:
+    #         scores_pos = cross_validate(
+    #             XGBClassifier(
+    #                 use_label_encoder=False,
+    #                 eval_metric="logloss",
+    #                 verbosity=0,
+    #                 random_state=42,
+    #                 base_score=0.5,
+    #             ),
+    #             X_pos,
+    #             y_pos,
+    #             cv=group_kfold.split(X_pos, y_pos, groups_pos),
+    #             scoring=["accuracy"],
+    #             n_jobs=-1,
+    #         )
+    #         pos_acc = scores_pos["test_accuracy"].mean()
+    #     else:
+    #         pos_acc = None
+    # except Exception as e:
+    #     print(f"Failed POS embedding evaluation for {input_filename}: {e}")
+    #     pos_acc = None
 
-    # Collect summary results for raw and POS (no NOPOS here for brevity)
-    all_results.append(
-        {
-            "dataset": input_filename,
-            "embedding_type": "VANILLA",
-            "classifier": "XGBoost",
-            "metric": "accuracy",
-            "score": raw_acc,
-        }
-    )
-    if pos_acc is not None:
-        all_results.append(
-            {
-                "dataset": input_filename,
-                "embedding_type": "POS",
-                "classifier": "XGBoost",
-                "metric": "accuracy",
-                "score": pos_acc,
-            }
-        )
+    # # Collect summary results for raw and POS (no NOPOS here for brevity)
+    # all_results.append(
+    #     {
+    #         "dataset": input_filename,
+    #         "embedding_type": "VANILLA",
+    #         "classifier": "XGBoost",
+    #         "metric": "accuracy",
+    #         "score": raw_acc,
+    #     }
+    # )
+    # if pos_acc is not None:
+    #     all_results.append(
+    #         {
+    #             "dataset": input_filename,
+    #             "embedding_type": "POS",
+    #             "classifier": "XGBoost",
+    #             "metric": "accuracy",
+    #             "score": pos_acc,
+    #         }
+    #     )
 
     # Run detailed evaluation with other classifiers
     all_results.extend(
@@ -666,36 +882,36 @@ for input_filename in os.listdir(ml_ready_dir):
         y_concat = df_combined[target_columns].values
         groups_concat = [matrix_to_base[m] for m in common_matrices]
 
-        try:
-            scores_combined = cross_validate(
-                XGBClassifier(
-                    use_label_encoder=False,
-                    eval_metric="logloss",
-                    verbosity=0,
-                    random_state=42,
-                    base_score=0.5,
-                ),
-                X_concat,
-                y_concat,
-                cv=group_kfold.split(X_concat, y_concat, groups_concat),
-                scoring=["accuracy"],
-                n_jobs=-1,
-            )
-            combined_acc = scores_combined["test_accuracy"].mean()
-        except Exception as e:
-            print(f"Failed COMBINED evaluation for {input_filename}: {e}")
-            combined_acc = None
+        # try:
+        #     scores_combined = cross_validate(
+        #         XGBClassifier(
+        #             use_label_encoder=False,
+        #             eval_metric="logloss",
+        #             verbosity=0,
+        #             random_state=42,
+        #             base_score=0.5,
+        #         ),
+        #         X_concat,
+        #         y_concat,
+        #         cv=group_kfold.split(X_concat, y_concat, groups_concat),
+        #         scoring=["accuracy"],
+        #         n_jobs=-1,
+        #     )
+        #     combined_acc = scores_combined["test_accuracy"].mean()
+        # except Exception as e:
+        #     print(f"Failed COMBINED evaluation for {input_filename}: {e}")
+        #     combined_acc = None
 
-        if combined_acc is not None:
-            all_results.append(
-                {
-                    "dataset": input_filename,
-                    "embedding_type": "VANILLA+POS",
-                    "classifier": "XGBoost",
-                    "metric": "accuracy",
-                    "score": combined_acc,
-                }
-            )
+        # if combined_acc is not None:
+        #     all_results.append(
+        #         {
+        #             "dataset": input_filename,
+        #             "embedding_type": "VANILLA+POS",
+        #             "classifier": "XGBoost",
+        #             "metric": "accuracy",
+        #             "score": combined_acc,
+        #         }
+        #     )
 
         # Run with all classifiers
         all_results.extend(
@@ -719,36 +935,36 @@ for input_filename in os.listdir(ml_ready_dir):
         y_concat = df_combined[target_columns].values
         groups_concat = [matrix_to_base[m] for m in common_matrices_nopos]
 
-        try:
-            scores_combined = cross_validate(
-                XGBClassifier(
-                    use_label_encoder=False,
-                    eval_metric="logloss",
-                    verbosity=0,
-                    random_state=42,
-                    base_score=0.5,
-                ),
-                X_concat,
-                y_concat,
-                cv=group_kfold.split(X_concat, y_concat, groups_concat),
-                scoring=["accuracy"],
-                n_jobs=-1,
-            )
-            combined_acc = scores_combined["test_accuracy"].mean()
-        except Exception as e:
-            print(f"Failed COMBINED evaluation for {input_filename}: {e}")
-            combined_acc = None
+        # try:
+        #     scores_combined = cross_validate(
+        #         XGBClassifier(
+        #             use_label_encoder=False,
+        #             eval_metric="logloss",
+        #             verbosity=0,
+        #             random_state=42,
+        #             base_score=0.5,
+        #         ),
+        #         X_concat,
+        #         y_concat,
+        #         cv=group_kfold.split(X_concat, y_concat, groups_concat),
+        #         scoring=["accuracy"],
+        #         n_jobs=-1,
+        #     )
+        #     combined_acc = scores_combined["test_accuracy"].mean()
+        # except Exception as e:
+        #     print(f"Failed COMBINED evaluation for {input_filename}: {e}")
+        #     combined_acc = None
 
-        if combined_acc is not None:
-            all_results.append(
-                {
-                    "dataset": input_filename,
-                    "embedding_type": "VANILLA+NOPOS",
-                    "classifier": "XGBoost",
-                    "metric": "accuracy",
-                    "score": combined_acc,
-                }
-            )
+        # if combined_acc is not None:
+        #     all_results.append(
+        #         {
+        #             "dataset": input_filename,
+        #             "embedding_type": "VANILLA+NOPOS",
+        #             "classifier": "XGBoost",
+        #             "metric": "accuracy",
+        #             "score": combined_acc,
+        #         }
+        #     )
 
         # Run with all classifiers
         all_results.extend(
@@ -767,13 +983,15 @@ df_results = pd.DataFrame(all_results)
 
 # Create a pivot table
 pivot_df = df_results.pivot_table(
-    index=["dataset", "embedding_type", "classifier"],
+    index=["dataset", "embedding_type", "classifier", "feature_count"],
     columns="metric",
     values="score",
 ).reset_index()
 
 # Optional: sort by dataset and classifier for better readability
-pivot_df = pivot_df.sort_values(by=["dataset", "embedding_type", "classifier"])
+pivot_df = pivot_df.sort_values(
+    by=["dataset", "embedding_type", "classifier", "feature_count"]
+)
 
 # Print the pivot table
 print(pivot_df)
